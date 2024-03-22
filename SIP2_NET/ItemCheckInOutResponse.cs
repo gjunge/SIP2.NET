@@ -35,7 +35,7 @@ using System.Text;
 
 namespace SIP2
 {
-    public class Item
+    public class ItemCheckInOutResponse
     {
         public string DueDate { get; set; }
         public string Title { get; set; }

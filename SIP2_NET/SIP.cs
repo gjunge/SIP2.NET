@@ -44,7 +44,7 @@ namespace SIP2
         /*********************************************
          * Instance Variables
          *********************************************/
-       
+
         private IPAddress ipAddress;
         private IPEndPoint remoteEP;
         private Socket sender = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
@@ -143,26 +143,30 @@ namespace SIP2
         /// </summary>
         public void Open()
         {
-            ipAddress = IPAddress.Parse(this.domain);
-            remoteEP = new IPEndPoint(ipAddress, Int32.Parse(this.port));
+            //ipAddress = IPAddress.Parse(this.domain);
+            //remoteEP = new IPEndPoint(ipAddress, Int32.Parse(this.port));
 
             //  Set up socket.
             try
             {
-                sender.Connect(remoteEP);
+                sender.Connect(this.domain, int.Parse(port));
             }
             catch (Exception ex)
             {
-
+                connected = false;
                 throw new NotConnectedException(ex.Message);
             }
+
+            connected = true;
+            //without username, we are good to go.
+            if (string.IsNullOrWhiteSpace(this.username)) return;
 
             //  Set up SIP start command.
             string sipCommand = string.Format("9300CN{0}|CO{1}|CP{2}", this.username, this.password, this.extra_number);
 
             //  Communicate with server.
             string response = sipFactory(sipCommand);
-            
+
             if (response.Contains("96"))
             {
                 connected = true;
@@ -245,9 +249,9 @@ namespace SIP2
             Close();
             return connected;
         }
-        
-        
-        
+
+
+
         /// <summary>
         ///     Returns a raw dump of an unparsed Patron Response Code query.
         /// </summary>
@@ -342,22 +346,22 @@ namespace SIP2
 
         }
 
-         /// <summary>
+        /// <summary>
         ///     Method to checkout items via SIP2 protocol.  Returns list of Items.  Returns null if patron is not authorized.  
         /// </summary>
         /// <param name="patronBarcode"></param>
         /// <param name="itemBarcodes"></param>
         /// <returns>Returns list of Items.  Returns null if patron is not authorized.</returns>
-        public List<Item> CheckOut(string patronBarcode, IEnumerable<string> itemBarcodes)
+        public List<ItemCheckInOutResponse> CheckOut(string patronBarcode, IEnumerable<string> itemBarcodes)
         {
             if (!connected) throw new NotConnectedException("Cannot checkout books.  SIP connection is not established!");
             if (authorized)
             {
-                List<Item> itemListOut = new List<Item>();
+                List<ItemCheckInOutResponse> itemListOut = new List<ItemCheckInOutResponse>();
                 string date = GetDateString();
                 foreach (string item in itemBarcodes)
                 {
-                    Item CheckedOutItem = new Item();
+                    ItemCheckInOutResponse CheckedOutItem = new ItemCheckInOutResponse();
                     string sipCommand = string.Format("11YN{0}                  AO1|AA{1}|AB{2}|AC{3}", date, patronBarcode, item, this.password);
                     string sipResponse = (sipFactory(sipCommand));
                     CheckedOutItem.ItemParse(sipResponse);
@@ -367,7 +371,7 @@ namespace SIP2
             }
             else
             {
-                List<Item> itemListOut = null;
+                List<ItemCheckInOutResponse> itemListOut = null;
                 return itemListOut;
             }
         }
@@ -379,14 +383,14 @@ namespace SIP2
         /// </summary>
         /// <param name="itemBarcodes">Barcode numbers of the items to be checked in.</param>
         /// <returns>Returns a list of parsed SIP item responses.  Returns null if transaction fails.</returns>
-        public List<Item> CheckIn(IEnumerable<string> itemBarcodes)
+        public List<ItemCheckInOutResponse> CheckIn(IEnumerable<string> itemBarcodes)
         {
             if (!connected) throw new NotConnectedException("Cannot checkin books.  SIP connection is not established!");
-            List<Item> itemListOut = null;
+            List<ItemCheckInOutResponse> itemListOut = null;
             string date = GetDateString();
             foreach (string item in itemBarcodes)
             {
-                Item CheckedInItem = new Item();
+                ItemCheckInOutResponse CheckedInItem = new ItemCheckInOutResponse();
                 string sipCommand = string.Format("09Y{0}{1}AP0|AO1|AB{2}|AC{3}", date, date, item, this.password);
                 string sipResponse = (sipFactory(sipCommand));
                 CheckedInItem.ItemParse(sipResponse);
@@ -396,6 +400,17 @@ namespace SIP2
         }
 
 
+        public ItemInformationResponse ItemInformation(string itemBarcode)
+        {
+            if (!connected) throw new NotConnectedException("Cannot get item information books.  SIP connection is not established!");
+
+            string date = GetDateString();
+            string sipCommand = string.Format("17{0}AO1|AB{1}|AC{2}", date, itemBarcode, this.password);
+            string sipResponse = (sipFactory(sipCommand));
+
+            return ItemInformationResponse.Parse(sipResponse);
+        }
+
 
         /// <summary>
         ///     Method to appy or remove item holds.  Holds removal does not work if the patron has the same barcode on hold more than once.  
@@ -404,7 +419,7 @@ namespace SIP2
         /// <param name="itemBarcode">Barcode of the item they wish to place on hold.</param>
         /// <param name="action">Integer value 1 for placing hold.  Integer value -1 for removing hold.</param>
         /// <returns>Return instance of the Item class.  Returns null if barcode is not authorized first.</returns>
-        public Item ItemHold(string patronBarcode, string itemBarcode, int action)
+        public ItemCheckInOutResponse ItemHold(string patronBarcode, string itemBarcode, int action)
         {
             if (!connected) throw new NotConnectedException("Cannot checkin books.  SIP connection is not established!");
             if (authorized)
@@ -421,7 +436,7 @@ namespace SIP2
                     default:
                         throw new InvalidParameterException("Unrecognized hold parameter!  Use -1 to delete hold, 1 to add hold!");
                 }
-                Item itemResponse = new Item();
+                ItemCheckInOutResponse itemResponse = new ItemCheckInOutResponse();
                 string date = GetDateString();
                 string sipCommand = string.Format("15{0}{1}|AO1|AA{2}|AB{3}|AC{4}", holdAction, date, patronBarcode, itemBarcode, this.password);
                 string sipResponse = (sipFactory(sipCommand));
@@ -439,16 +454,16 @@ namespace SIP2
         /// <param name="patronBarcode">Patron barcode</param>
         /// <param name="itemBarcodes">IEnumberable of string - the item(s)' barcode(s) to renew.</param>
         /// <returns>Returns list of the Items class.  Returns null if patron is not authorized.</returns>
-        public List<Item> Renew(string patronBarcode, IEnumerable<string> itemBarcodes)
+        public List<ItemCheckInOutResponse> Renew(string patronBarcode, IEnumerable<string> itemBarcodes)
         {
             if (!connected) throw new NotConnectedException("Cannot checkout books.  SIP connection is not established!");
             if (authorized)
             {
-                List<Item> itemListOut = new List<Item>();
+                List<ItemCheckInOutResponse> itemListOut = new List<ItemCheckInOutResponse>();
                 string date = GetDateString();
                 foreach (string item in itemBarcodes)
                 {
-                    Item RenewedItem = new Item();
+                    ItemCheckInOutResponse RenewedItem = new ItemCheckInOutResponse();
                     string sipCommand = string.Format("29YY{0}{1}AO1|AA{2}|AB{3}|AC{4}", date, date, patronBarcode, item, this.password);
                     string sipResponse = (sipFactory(sipCommand));
                     RenewedItem.ItemParse(sipResponse);
@@ -566,7 +581,7 @@ namespace SIP2
 
             // Send the data through the socket.
             int bytesSent = sender.Send(msg);
-            
+
             // Receive the response from the remote device.
             StringBuilder outputString = new StringBuilder();
             string bit = String.Empty;

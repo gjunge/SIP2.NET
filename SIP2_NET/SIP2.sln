@@ -1,9 +1,10 @@
-﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 14
-VisualStudioVersion = 14.0.24720.0
+# Visual Studio Version 17
+VisualStudioVersion = 17.9.34622.214
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SIP2", "SIP2.csproj", "{3939BE5B-F86D-4569-A1D7-FF59A3A4F0FD}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SIP2", "SIP2.csproj", "{3939BE5B-F86D-4569-A1D7-FF59A3A4F0FD}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SIP2Console", "..\SIP2Console\SIP2Console.csproj", "{06CA8A2A-64EA-469F-BC90-01D194F8CC79}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -15,8 +16,15 @@ Global
 		{3939BE5B-F86D-4569-A1D7-FF59A3A4F0FD}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{3939BE5B-F86D-4569-A1D7-FF59A3A4F0FD}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{3939BE5B-F86D-4569-A1D7-FF59A3A4F0FD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{06CA8A2A-64EA-469F-BC90-01D194F8CC79}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{06CA8A2A-64EA-469F-BC90-01D194F8CC79}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{06CA8A2A-64EA-469F-BC90-01D194F8CC79}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{06CA8A2A-64EA-469F-BC90-01D194F8CC79}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {905CE67F-58C2-47AB-ACB4-01F59BC9E3D9}
 	EndGlobalSection
 EndGlobal

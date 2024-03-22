@@ -1,1 +1,0 @@
-Current DLL compiled for .NET 3.5
