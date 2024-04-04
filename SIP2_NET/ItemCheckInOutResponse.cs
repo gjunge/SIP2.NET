@@ -35,6 +35,13 @@ using System.Text;
 
 namespace SIP2
 {
+
+    public class AuthorizeBarcodeResponse
+    {
+        public string FailureResponse { get; internal set; }
+        public bool Authorized { get; internal set; }
+        public Patron Patron { get; internal set; }
+    }
     public class ItemCheckInOutResponse
     {
         public string DueDate { get; set; }

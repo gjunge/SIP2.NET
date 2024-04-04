@@ -36,6 +36,7 @@ using System.Net.Sockets;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading.Tasks;
 
 namespace SIP2
 {
@@ -46,20 +47,19 @@ namespace SIP2
          *********************************************/
 
         private IPAddress ipAddress;
-        private IPEndPoint remoteEP;
         private Socket sender = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
         private bool connected = false;
         private bool authorized = false;
         private int incrementer = 0;
 
-        private string domain = String.Empty;
-        private string port = String.Empty;
+        private string domain = null;
+        private int port;
         private string username = String.Empty;
         private string password = String.Empty;
         private string extra_number = String.Empty;
 
-        private delegate string SipFactory(string sipCommand);
-        private SipFactory sipFactory;
+        private delegate Task<string> SipFactoryAsync(string sipCommand);
+        private SipFactoryAsync sipFactoryAsync;
         private bool hasChecksum;
 
 
@@ -82,14 +82,14 @@ namespace SIP2
             {
                 if (value == true)
                 {
-                    sipFactory = null;
-                    sipFactory += SipFactoryWithCheckSum;
+                    sipFactoryAsync = null;
+                    sipFactoryAsync += SipFactoryWithCheckSum;
                     hasChecksum = value;
                 }
                 else if (value == false)
                 {
-                    sipFactory = null;
-                    sipFactory += SipFactoryNoCheckSum;
+                    sipFactoryAsync = null;
+                    sipFactoryAsync += SipFactoryNoCheckSum;
                     hasChecksum = value;
                 }
             }
@@ -122,9 +122,21 @@ namespace SIP2
         /// <param name="username">SIP server username</param>
         /// <param name="password">SIP server password</param>
         /// <param name="extra_number">SIP server extra number (optional in some implementations)</param>
-        public SipConnection(string ip, string port, string username, string password, string extra_number = "")
+        public SipConnection(IPAddress ip, int port, string username = null, string password = null, string extra_number = null)
         {
-            this.domain = ip;
+            this.ipAddress = ip;
+            this.port = port;
+            this.username = username;
+            this.password = password;
+            this.extra_number = extra_number;
+            this.HasChecksum = false;
+        }
+
+
+
+        public SipConnection(string domain, int port, string username = null, string password = null, string extra_number = null)
+        {
+            this.domain = domain;
             this.port = port;
             this.username = username;
             this.password = password;
@@ -141,7 +153,7 @@ namespace SIP2
         /// <summary>
         ///     Starts SIP connection assuming that SIP parameters were defined in the contructor.
         /// </summary>
-        public void Open()
+        public async Task OpenAsync()
         {
             //ipAddress = IPAddress.Parse(this.domain);
             //remoteEP = new IPEndPoint(ipAddress, Int32.Parse(this.port));
@@ -149,7 +161,14 @@ namespace SIP2
             //  Set up socket.
             try
             {
-                sender.Connect(this.domain, int.Parse(port));
+                if (this.ipAddress != null)
+                {
+                   await sender.ConnectAsync(this.ipAddress, port);
+                }
+                else
+                {
+                    await sender.ConnectAsync(this.domain, port);
+                }
             }
             catch (Exception ex)
             {
@@ -165,7 +184,7 @@ namespace SIP2
             string sipCommand = string.Format("9300CN{0}|CO{1}|CP{2}", this.username, this.password, this.extra_number);
 
             //  Communicate with server.
-            string response = sipFactory(sipCommand);
+            string response = await sipFactoryAsync(sipCommand);
 
             if (response.Contains("96"))
             {
@@ -179,7 +198,7 @@ namespace SIP2
             }
             else if (response.Contains("941"))
             {
-                if (HandShake() != "0") connected = true;
+                if (await HandShakeAsync() != "0") connected = true;
                 else
                 {
                     connected = false;
@@ -203,15 +222,15 @@ namespace SIP2
         /// <param name="username">SIP server username</param>
         /// <param name="password">SIP server password</param>
         /// <param name="extra_number">SIP server extra number (optional in some implementations)</param>
-        public void Open(string ip, string port, string username, string password, string extra_number)
+        public async Task OpenAsync(string domain, int port, string username = null, string password = null, string extra_number = null)
         {
             //  Set up instance variables.   
-            this.domain = ip;
+            this.domain = domain;
             this.port = port;
             this.username = username;
             this.password = password;
             this.extra_number = extra_number;
-            Open();
+            await OpenAsync();
         }
 
 
@@ -220,50 +239,25 @@ namespace SIP2
         ///     Test whether an instance of a constructed SIP class is able to communicate with the server.  Requires an open connection.
         /// </summary>
         /// <returns>Returns true if connection is viable.</returns>
-        public bool TestConnection()
+        public async Task<bool> TestConnectionAsync()
         {
-            Open();
+            await OpenAsync();
             Close();
             return connected;
         }
-
-
-
-        /// <summary>
-        ///     Test whether an instance of an unconstructed SIP class is able to communicate with the server.  Use this for on-the-fly tests of SIP parameters.
-        /// </summary>
-        /// <param name="ip">SIP server IP</param>
-        /// <param name="port">SIP server port</param>
-        /// <param name="username">SIP server username</param>
-        /// <param name="password">SIP server password</param>
-        /// <param name="extra_number">SIP server extra number (optional in some implementations)</param>
-        /// <returns>Returns true if connection is viable.</returns>
-        public bool TestConnection(string ip, string port, string username, string password, string extra_number)
-        {
-            this.domain = ip;
-            this.port = port;
-            this.username = username;
-            this.password = password;
-            this.extra_number = extra_number;
-            Open();
-            Close();
-            return connected;
-        }
-
-
 
         /// <summary>
         ///     Returns a raw dump of an unparsed Patron Response Code query.
         /// </summary>
         /// <param name="barcode">Barcode of the patron.</param>
         /// <returns>Return raw SIP2 dump of patron request message</returns>
-        public string RawPatronDump(string barcode)
+        public async Task<string> RawPatronDumpAsync(string barcode)
         {
             if (connected)
             {
                 string date = GetDateString();
                 string sipCommand = string.Format("63001{0}          AO1|AA{1}|AC{2}|AD|BP|BQ", date, barcode, this.password);
-                return sipFactory(sipCommand);
+                return await sipFactoryAsync(sipCommand);
             }
             else
             {
@@ -280,27 +274,33 @@ namespace SIP2
         /// <param name="patron">Instance of the patron class.  This will be popluated with a human-readable break down of the Patron Response Message from the SIP server.</param>
         /// <param name="failureResponse">Reason, if any, that a card failed to authorize.</param>
         /// <returns>Return true if authorization is successful.  Returns false if bardcode failed to authorize.</returns>
-        public bool AuthorizeBarcode(string barcode, ref Patron patron, ref string failureResponse)
+        public async Task<AuthorizeBarcodeResponse> AuthorizeBarcodeAsync(string barcode)
         {
-            patron = new Patron();
+            Patron patron = new Patron();
             string response = String.Empty;
             if (connected)
             {
                 string date = GetDateString();
                 string sipCommand = string.Format("63001{0}          AO1|AA{1}|AC{2}|AD|BP|BQ", date, barcode, this.password);
-                response = sipFactory(sipCommand);
+                response = await sipFactoryAsync(sipCommand);
                 patron.PatronParse(response);
                 if ((patron.Authorized) & (patron.Fines < patron.FineLimit))
                 {
-                    failureResponse = "";
-                    authorized = true;
-                    return authorized;
+                    return new AuthorizeBarcodeResponse()
+                    {
+                        FailureResponse = String.Empty,
+                        Authorized = true,
+                        Patron = patron
+                    };
                 }
                 else
                 {
-                    failureResponse = "There seems to be a problem with your card.  Please see a librarian!";
-                    authorized = false;
-                    return authorized;
+                    return new AuthorizeBarcodeResponse()
+                    {
+                        FailureResponse = "There seems to be a problem with your card.  Please see a librarian!",
+                        Authorized = false,
+                        Patron = patron
+                    };
                 }
             }
             else
@@ -311,40 +311,6 @@ namespace SIP2
 
 
 
-        /// <summary>
-        ///     Authorizes patron barcode against the SIP server.
-        /// </summary>
-        /// <param name="barcode">Barcode of the patron.</param>
-        /// <returns>Return true if authorization is successful.  Returns false if bardcode failed to authorize.</returns>
-        public bool AuthorizeBarcode(string barcode)
-        {
-            Patron patron = new Patron();
-            string PatronInformationResponse = String.Empty;
-            if (connected)
-            {
-                string date = GetDateString();
-                string sipCommand = string.Format("63001{0}          AO1|AA{1}|AC{2}|AD|BP|BQ", date, barcode, this.password);
-                PatronInformationResponse = sipFactory(sipCommand);
-                patron.PatronParse(PatronInformationResponse);
-                if (patron.Authorized)
-                {
-                    //  All good.
-                    authorized = true;
-                    return authorized;
-                }
-                else
-                {
-                    //  Blocked or excessive fines.  Also could be an invalid barcode.
-                    authorized = false;
-                    return authorized;
-                }
-            }
-            else
-            {
-                throw new NotConnectedException("SIP server connection is not established.  Failed to authorize barcode.");
-            }
-
-        }
 
         /// <summary>
         ///     Method to checkout items via SIP2 protocol.  Returns list of Items.  Returns null if patron is not authorized.  
@@ -352,7 +318,7 @@ namespace SIP2
         /// <param name="patronBarcode"></param>
         /// <param name="itemBarcodes"></param>
         /// <returns>Returns list of Items.  Returns null if patron is not authorized.</returns>
-        public List<ItemCheckInOutResponse> CheckOut(string patronBarcode, IEnumerable<string> itemBarcodes)
+        public async Task<List<ItemCheckInOutResponse>> CheckOutAsync(string patronBarcode, IEnumerable<string> itemBarcodes)
         {
             if (!connected) throw new NotConnectedException("Cannot checkout books.  SIP connection is not established!");
             if (authorized)
@@ -363,7 +329,7 @@ namespace SIP2
                 {
                     ItemCheckInOutResponse CheckedOutItem = new ItemCheckInOutResponse();
                     string sipCommand = string.Format("11YN{0}                  AO1|AA{1}|AB{2}|AC{3}", date, patronBarcode, item, this.password);
-                    string sipResponse = (sipFactory(sipCommand));
+                    string sipResponse = (await sipFactoryAsync(sipCommand));
                     CheckedOutItem.ItemParse(sipResponse);
                     itemListOut.Add(CheckedOutItem);
                 }
@@ -383,7 +349,7 @@ namespace SIP2
         /// </summary>
         /// <param name="itemBarcodes">Barcode numbers of the items to be checked in.</param>
         /// <returns>Returns a list of parsed SIP item responses.  Returns null if transaction fails.</returns>
-        public List<ItemCheckInOutResponse> CheckIn(IEnumerable<string> itemBarcodes)
+        public async Task<List<ItemCheckInOutResponse>> CheckInAsync(IEnumerable<string> itemBarcodes)
         {
             if (!connected) throw new NotConnectedException("Cannot checkin books.  SIP connection is not established!");
             List<ItemCheckInOutResponse> itemListOut = null;
@@ -392,7 +358,7 @@ namespace SIP2
             {
                 ItemCheckInOutResponse CheckedInItem = new ItemCheckInOutResponse();
                 string sipCommand = string.Format("09Y{0}{1}AP0|AO1|AB{2}|AC{3}", date, date, item, this.password);
-                string sipResponse = (sipFactory(sipCommand));
+                string sipResponse = (await sipFactoryAsync(sipCommand));
                 CheckedInItem.ItemParse(sipResponse);
                 itemListOut.Add(CheckedInItem);
             }
@@ -400,13 +366,13 @@ namespace SIP2
         }
 
 
-        public ItemInformationResponse ItemInformation(string itemBarcode)
+        public async Task<ItemInformationResponse> ItemInformationAsync(string itemBarcode)
         {
             if (!connected) throw new NotConnectedException("Cannot get item information books.  SIP connection is not established!");
 
             string date = GetDateString();
             string sipCommand = string.Format("17{0}AO1|AB{1}|AC{2}", date, itemBarcode, this.password);
-            string sipResponse = (sipFactory(sipCommand));
+            string sipResponse = (await sipFactoryAsync(sipCommand));
 
             return ItemInformationResponse.Parse(sipResponse);
         }
@@ -419,7 +385,7 @@ namespace SIP2
         /// <param name="itemBarcode">Barcode of the item they wish to place on hold.</param>
         /// <param name="action">Integer value 1 for placing hold.  Integer value -1 for removing hold.</param>
         /// <returns>Return instance of the Item class.  Returns null if barcode is not authorized first.</returns>
-        public ItemCheckInOutResponse ItemHold(string patronBarcode, string itemBarcode, int action)
+        public async Task<ItemCheckInOutResponse> ItemHoldAsync(string patronBarcode, string itemBarcode, int action)
         {
             if (!connected) throw new NotConnectedException("Cannot checkin books.  SIP connection is not established!");
             if (authorized)
@@ -439,7 +405,7 @@ namespace SIP2
                 ItemCheckInOutResponse itemResponse = new ItemCheckInOutResponse();
                 string date = GetDateString();
                 string sipCommand = string.Format("15{0}{1}|AO1|AA{2}|AB{3}|AC{4}", holdAction, date, patronBarcode, itemBarcode, this.password);
-                string sipResponse = (sipFactory(sipCommand));
+                string sipResponse = (await sipFactoryAsync(sipCommand));
                 itemResponse.ItemParse(sipResponse);
                 return itemResponse;
             }
@@ -454,7 +420,7 @@ namespace SIP2
         /// <param name="patronBarcode">Patron barcode</param>
         /// <param name="itemBarcodes">IEnumberable of string - the item(s)' barcode(s) to renew.</param>
         /// <returns>Returns list of the Items class.  Returns null if patron is not authorized.</returns>
-        public List<ItemCheckInOutResponse> Renew(string patronBarcode, IEnumerable<string> itemBarcodes)
+        public async Task<List<ItemCheckInOutResponse>> RenewAsync(string patronBarcode, IEnumerable<string> itemBarcodes)
         {
             if (!connected) throw new NotConnectedException("Cannot checkout books.  SIP connection is not established!");
             if (authorized)
@@ -465,7 +431,7 @@ namespace SIP2
                 {
                     ItemCheckInOutResponse RenewedItem = new ItemCheckInOutResponse();
                     string sipCommand = string.Format("29YY{0}{1}AO1|AA{2}|AB{3}|AC{4}", date, date, patronBarcode, item, this.password);
-                    string sipResponse = (sipFactory(sipCommand));
+                    string sipResponse = (await sipFactoryAsync(sipCommand));
                     RenewedItem.ItemParse(sipResponse);
                     itemListOut.Add(RenewedItem);
                 }
@@ -484,11 +450,11 @@ namespace SIP2
         /// </summary>
         /// <param name="patronBarcode">Patron barcode</param>
         /// <returns>Returns true if command was successful.  Returns false if command fails or renewal was unsuccessful.</returns>
-        public bool RenewAll(string patronBarcode)
+        public async Task<bool> RenewAllAsync(string patronBarcode)
         {
             string date = GetDateString();
             string sipCommand = string.Format("65{0}AO1|AA{1}|AC{2}", date, patronBarcode, this.password);
-            string sipResponse = sipFactory(sipCommand);
+            string sipResponse = await sipFactoryAsync(sipCommand);
             if (sipResponse.Substring(2, 1) == "1") return true;
             else return false;
         }
@@ -499,11 +465,11 @@ namespace SIP2
         /// </summary>
         /// <param name="patronBarcode">Patron barcode</param>
         /// <returns>Returns true if session was sucessfully ended - false if it wasn't.</returns>
-        public bool EndPatronSession(string patronBarcode)
+        public async Task<bool> EndPatronSessionAsync(string patronBarcode)
         {
             string date = GetDateString();
             string sipCommand = string.Format("35{0}AO1|AA{1}|AC{2}", date, patronBarcode, this.password);
-            string sipResponse = sipFactory(sipCommand);
+            string sipResponse = await sipFactoryAsync(sipCommand);
             if (sipResponse.Substring(2, 1) == "Y") return true;
             else return false;
         }
@@ -524,8 +490,6 @@ namespace SIP2
             else throw new NotConnectedException("Cannot close connection.  Connection was not established!");
         }
 
-
-
         /// <summary>
         ///     Disposes SIP connection.
         /// </summary>
@@ -540,12 +504,12 @@ namespace SIP2
          * Private Methods
          *********************************************/
 
-        private string HandShake()
+        private async Task<string> HandShakeAsync()
         {
             try
             {
                 string rulesCommand = "9900302.0E";
-                return sipFactory(rulesCommand);
+                return await sipFactoryAsync(rulesCommand);
             }
             catch (Exception)
             {
@@ -569,7 +533,7 @@ namespace SIP2
 
 
 
-        private string SipFactoryNoCheckSum(string sipCommand)
+        private async Task<string> SipFactoryNoCheckSum(string sipCommand)
         {
             byte[] bytes = new byte[1024];
 
@@ -580,7 +544,8 @@ namespace SIP2
             if (UseConsoleDebugMode) { Console.WriteLine(sipCommand); }
 
             // Send the data through the socket.
-            int bytesSent = sender.Send(msg);
+            await SendDataAsync(sender, msg);
+            
 
             // Receive the response from the remote device.
             StringBuilder outputString = new StringBuilder();
@@ -589,7 +554,7 @@ namespace SIP2
             //  Receive date, scrub it, and make it pretty.
             while (!bit.Contains("\r"))
             {
-                sender.Receive(bytes);
+                await ReceiveDataAsync(sender, bytes);
                 bit = Encoding.ASCII.GetString(bytes);
                 for (int i = 0; i <= bit.Length - 1; i++)
                 {
@@ -604,9 +569,35 @@ namespace SIP2
             return outputString.ToString();
         }
 
+        async Task SendDataAsync(Socket socket, byte[] data)
+        {
+            // Ensure the socket is connected
+            if (!socket.Connected) throw new InvalidOperationException("Socket is not connected.");
+
+            // Wrap the socket in a NetworkStream
+            using (var networkStream = new NetworkStream(socket, ownsSocket: false))
+            {
+                await networkStream.WriteAsync(data, 0, data.Length);
+            }
+        }
 
 
-        private string SipFactoryWithCheckSum(string sipCommand)
+        async Task<int> ReceiveDataAsync(Socket socket, byte[] buffer)
+        {
+            // Ensure the socket is connected
+            if (!socket.Connected) throw new InvalidOperationException("Socket is not connected.");
+
+            // Wrap the socket in a NetworkStream
+            using (var networkStream = new NetworkStream(socket, ownsSocket: false))
+            {
+                int bytesRead = await networkStream.ReadAsync(buffer, 0, buffer.Length);
+                return bytesRead; // Returns the number of bytes read
+            }
+        }
+
+
+
+        private async Task<string> SipFactoryWithCheckSum(string sipCommand)
         {
 
             byte[] bytes = new byte[1024];
@@ -624,7 +615,8 @@ namespace SIP2
             byte[] msg = Encoding.ASCII.GetBytes(sipCommandWithChecksum + '\r');
 
             // Send the data through the socket.
-            int bytesSent = sender.Send(msg);
+            await SendDataAsync(sender, msg);
+
 
             // Receive the response from the remote device.
             StringBuilder outputString = new StringBuilder();
@@ -633,7 +625,7 @@ namespace SIP2
             //  Receive date, scrub it, and make it pretty.
             while (!bit.Contains("\r"))
             {
-                sender.Receive(bytes);
+                await ReceiveDataAsync(sender, bytes);
                 bit = Encoding.ASCII.GetString(bytes);
                 for (int i = 0; i <= bit.Length - 1; i++)
                 {
