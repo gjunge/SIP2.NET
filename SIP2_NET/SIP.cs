@@ -519,17 +519,7 @@ namespace SIP2
 
 
 
-        private string GetDateString()
-        {
-            string year = DateTime.Now.Year.ToString("00");
-            string month = DateTime.Now.Month.ToString("00");
-            string day = DateTime.Now.Day.ToString("00");
-            string ZZZZ = "    ";
-            string hour = DateTime.Now.Hour.ToString("00");
-            string minute = DateTime.Now.Minute.ToString("00");
-            string second = DateTime.Now.Second.ToString("00");
-            return year + month + day + ZZZZ + hour + minute + second;
-        }
+        private string GetDateString() => DateTime.UtcNow.ToString("yyyyMMdd    HHmmss");
 
 
 
